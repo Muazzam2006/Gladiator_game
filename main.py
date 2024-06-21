@@ -18,27 +18,36 @@ class AttributeAdjustment(BaseModel):
     stamina: int
 
 
-characters: dict[int, Character] = {}
+characters = [
+    {
+        "id": 1, 
+        "name": "Character 1", 
+        "strength": 0, 
+        "agility": 0, 
+        "stamina": 0, 
+        "level": 1, 
+        "availablePoints": 5
+    }
+]
 
 @app.get("/api/characters/{id}")
 async def get_character(id: int):
-    result = []
     for character in characters:
         if character.get("id") == id:
-            result.append(character)
-    return result
+            return character
+    return {"response": "Character not found"}
 
 @app.post("/api/characters")
 async def create_character(character: Character):
     characters.append(character)
-    return (character, characters)
+    return characters
 
-@app.put("/api/characters/{id}/attributes")
-async def adjust_character_attributes(id: int, adjustments: AttributeAdjustment):
-    if id not in characters:
+@app.put("/api/characters/{g_id}/attributes")
+async def adjust_character_attributes(g_id: int, adjustments: AttributeAdjustment):
+    character = characters[g_id]
+    if g_id not in characters:
         return {"response": "Character not found"}
-    character = characters[id]
-    if adjustments.strength + adjustments.agility + adjustments.stamina > character.availablePoints:
+    if (adjustments.strength + adjustments.agility + adjustments.stamina) > character.availablePoints:
         return {"response": "Not enough available points"}
     character.strength = adjustments.strength
     character.agility = adjustments.agility
