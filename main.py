@@ -67,3 +67,34 @@ async def adjust_character_attributes(id: int, adjustments: AttributeAdjustment)
             chc["stamina"] = adjustments.stamina
             chc["availablePoints"] -= (adjustments.strength + adjustments.agility + adjustments.stamina)
             return chc
+
+lobbies = []
+
+class Lobby(BaseModel):
+    lobbyId: int
+    players: list[Character] = []
+    
+
+@app.post("/api/lobbies", response_model=Lobby)
+async def create_lobby():
+    lobby_id = len(lobbies) + 1
+    new_lobby = Lobby(lobbyId=lobby_id, players=[])
+    lobbies.append(new_lobby)
+    return new_lobby
+
+@app.post("/api/lobbies/{lobbyId}/join", response_model=Lobby)
+async def join_lobby(lobbyId: int, characterId: int):
+    lb = next((lobby for lobby in lobbies if lobby.lobbyId == lobbyId), None)
+    if not lb:
+        raise HTTPException(status_code=404, detail="Lobby not found")
+    else:
+        chc = list(filter(lambda ch: ch.get("id") == characterId, characters))
+        if not chc:
+            raise HTTPException(status_code=404, detail="Character not found")
+        else:
+            chc = chc[0]
+            for l in lobbies:
+                if chc in l.players:
+                    raise HTTPException(status_code=400, detail="Character is already in a lobby")
+            lb.players.append(chc)
+            return lb
