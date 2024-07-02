@@ -10,23 +10,22 @@ characters = []
 class Character(BaseModel):
     id: int = len(characters) + 1
     name: str
-    strength: int = 0
-    agility: int = 0
-    stamina: int = 0
+    strength: int = 10
+    agility: int = 10
+    stamina: int = 10
     level: int = 1
-    availablePoints: int = 30
-    health: int = 100
+    availablePoints: int = 0
+    health: int = 120
     experience: int = 0
 
-    def attack_power(self):
-        return self.strength
+    def increase_xp(self, xp: int):
+        self.experience += xp
+        if self.experience >= self.level * 100: 
+            self.level += 1
+            self.availablePoints += 5
+            self.health += self.stamina // 2
 
-    def critical_chance(self):
-        return min(50, self.agility * 2)
-
-    def dodge_chance(self):
-        return min(50, self.agility * 2)
-    
+        
 
 
 class Bot(BaseModel):
@@ -35,16 +34,7 @@ class Bot(BaseModel):
     strength: int
     agility: int
     stamina: int
-    health: int = 100
-
-    def attack_power(self):
-        return self.strength
-
-    def critical_chance(self):
-        return min(50, self.agility * 2)
-
-    def dodge_chance(self):
-        return min(50, self.agility * 2)
+    health: int = 120
 
 
 class AttributeAdjustment(BaseModel):
@@ -55,7 +45,7 @@ class AttributeAdjustment(BaseModel):
 
 @app.get("/api/characters/{id}")
 def get_character(id: int):
-    chc = list(filter(lambda ch: ch["id"] == id, characters))
+    chc = list(filter(lambda ch: ch.id == id, characters))
     if not chc:
         raise HTTPException(status_code=404, detail="Character not found")
     return chc[0]
@@ -67,20 +57,19 @@ async def create_character(name_: str):
     characters.append(ch)
     return ch
 
-
+# тут нужно добавить логику level-ов потом
 @app.put("/api/characters/{id}/attributes")
 async def adjust_character_attributes(c_id: int, adjustments: AttributeAdjustment):
     chc = next((ch for ch in characters if ch.id == c_id), None)
     if not chc:
         raise HTTPException(status_code=404, detail="Character not found")
     else:
-        # chc = chc[0]
         if (adjustments.strength + adjustments.agility + adjustments.stamina) > chc.availablePoints:
             raise HTTPException(status_code=400, detail="Not enough available points")
         else:
-            chc.strength = adjustments.strength
-            chc.agility = adjustments.agility
-            chc.stamina = adjustments.stamina
+            chc.strength += adjustments.strength
+            chc.agility += adjustments.agility
+            chc.stamina += adjustments.stamina
             chc.availablePoints -= (adjustments.strength + adjustments.agility + adjustments.stamina)
             return chc
 
@@ -142,16 +131,16 @@ async def start_fight(lobbyId: int):
     character = lobby.players[0]
     
     bot_id = len(bots) + 1
-    bot_strength = random.randint(5, 15)
-    bot_agility = random.randint(5, 15)
-    bot_stamina = random.randint(5, 15)
+    bot_strength = random.randint(1, 20)
+    bot_agility = random.randint(1, 30-bot_strength-1)
+    bot_stamina = random.randint(1, 30-bot_strength-bot_agility)
     bot = Bot(
         id=bot_id,
         name=f"Bot {bot_id}",
         strength=bot_strength,
         agility=bot_agility,
         stamina=bot_stamina,
-        health=bot_stamina * 10
+        health=120
     )
     bots.append(bot)
 
@@ -175,7 +164,6 @@ class Move(str, Enum):
     legs = "legs"
 
 
-
 class MoveResult(BaseModel):
     playerHit: bool
     opponentHit: bool
@@ -183,6 +171,8 @@ class MoveResult(BaseModel):
     opponentDamageDealt: int
     playerHealth: int
     opponentHealth: int
+    fightOver: bool
+    victory: bool
 
 
 @app.post("/api/fights/{fightId}/moves", response_model=MoveResult)
@@ -190,37 +180,70 @@ async def make_move(fightId: int, attack: Move, block: Move, block2: Move):
     fight = next((fight for fight in fights if fight.fightId == fightId), None)
     if not fight:
         raise HTTPException(status_code=404, detail="Fight not found")
-
-    if not fight.playerTurn:
-        raise HTTPException(status_code=400, detail="Not player's turn")
-
     
+    fightOver = fight.opponentHealth <= 0 or fight.playerHealth <= 0
+    victory = fight.opponentHealth <= 0
+
+    if fightOver:
+        raise HTTPException(status_code=400, detail="Fight is Over")
+    
+    else:
+        character = next((char for char in characters if char.id == fight.playerId), None)
+        bot = next((b for b in bots if b.id == fight.botId), None)
+
+        bot_attack = random.choice(list(Move))
+        bot_block = random.sample(list(Move), 2)
+
+        playerHit = attack not in bot_block
+        playerDamageDealt = character.strength + 5 if playerHit else 0 
+        fight.opponentHealth -= (playerDamageDealt - (1 if character.agility > 20 else 2 * character.agility // 100))
+
+        bot_attack = random.choice(list(Move))
+        bot_block = random.sample(list(Move), 2)
+
+        opponentHit = bot_attack != block and bot_attack != block2
+        opponentDamageDealt = bot.strength + 5 if opponentHit else 0 
+        fight.playerHealth -= (opponentDamageDealt - (1 if bot.agility > 20 else 2 * bot.agility // 100))
+
+        return MoveResult(
+            playerHit=playerHit,
+            opponentHit=opponentHit,
+            playerDamageDealt=playerDamageDealt,
+            opponentDamageDealt=opponentDamageDealt,
+            playerHealth=fight.playerHealth,
+            opponentHealth=fight.opponentHealth,
+            fightOver=fightOver,
+            victory=victory
+        )
+
+class EndFightResult(BaseModel):
+    winner: str
+    experience: int
+
+@app.delete("/api/fights/{fightId}", response_model=EndFightResult)
+async def end_fight(fightId: int):
+    fight = next((fight for fight in fights if fight.fightId == fightId), None)
+    if not fight:
+        raise HTTPException(status_code=404, detail="Fight not found")
+
     character = next((char for char in characters if char.id == fight.playerId), None)
-    bot = next((b for b in bots if b.id == fight.botId), None)
 
-    playerHit = attack != block and attack != block2
-    critical_hit = random.random() < (character.critical_chance() / 100)
-    playerDamageDealt = character.attack_power() * (1.5 if critical_hit else 1) if playerHit else 0
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
 
-    fight.opponentHealth -= playerDamageDealt
+    if not (fight.opponentHealth <= 0 or fight.playerHealth <= 0):
+        raise HTTPException(status_code=400, detail="Fight isn't over")
+    else:
+        xp = 100  
+        winner = "player" if fight.opponentHealth <= 0 else "bot"
 
-    bot_attack = random.choice(list(Move))
-    bot_block = random.sample(list(Move), 2)
+        if winner == "player":
+            character.increase_xp(xp)
 
-    opponentHit = bot_attack != block and bot_attack != block2
-    critical_hit = random.random() < (bot.critical_chance() / 100)
-    opponentDamageDealt = bot.attack_power() * (1.5 if critical_hit else 1) if opponentHit else 0
+        fights.remove(fight)
 
-    fight.playerHealth -= opponentDamageDealt
-
-    fight.playerTurn = not fight.playerTurn
-
-    return MoveResult(
-        playerHit=playerHit,
-        opponentHit=opponentHit,
-        playerDamageDealt=playerDamageDealt,
-        opponentDamageDealt=opponentDamageDealt,
-        playerHealth=fight.playerHealth,
-        opponentHealth=fight.opponentHealth
-    )
+        return EndFightResult(
+            winner=winner,
+            experience=xp if winner == "player" else 0
+        )
 
