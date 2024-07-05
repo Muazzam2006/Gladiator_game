@@ -156,6 +156,7 @@ def end_fight(db: Session, fight_id: int):
 
     if winner == "player":
         character.experience += xp
+        character.availablePoints += 5
         db.commit()
         db.refresh(character)
 
