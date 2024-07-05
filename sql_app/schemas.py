@@ -1,8 +1,6 @@
 from pydantic import BaseModel
 from enum import Enum
 
-
-
 class CharacterBase(BaseModel):
     name: str
 
@@ -10,7 +8,7 @@ class CharacterCreate(CharacterBase):
     pass
 
 class Character(CharacterBase):
-    id: int
+    char_id: int
     strength: int = 10
     agility: int = 10
     stamina: int = 10
@@ -18,7 +16,6 @@ class Character(CharacterBase):
     availablePoints: int = 0
     health: int = 120
     experience: int = 0
-    # lobbies: list["Lobby"] = []
 
     class Config:
         orm_mode = True
@@ -34,7 +31,7 @@ class BotCreate(BotBase):
     pass
 
 class Bot(BotBase):
-    id: int
+    bot_id: int
 
     class Config:
         orm_mode = True
@@ -45,14 +42,13 @@ class AttributeAdjustment(BaseModel):
     stamina: int
 
 class LobbyBase(BaseModel):
-    id: int
-    players: list[Character] = []
+    lobby_id: int
 
 class LobbyCreate(LobbyBase):
     pass
 
 class Lobby(LobbyBase):
-    id: int
+    players: list[Character] = []
 
     class Config:
         orm_mode = True
@@ -69,7 +65,7 @@ class FightCreate(FightBase):
     pass
 
 class Fight(FightBase):
-    id: int
+    fight_id: int
 
     class Config:
         orm_mode = True
@@ -95,4 +91,4 @@ class EndFightResult(BaseModel):
     experience: int
 
     class Config:
-        from_attributes = True
+        orm_mode = True

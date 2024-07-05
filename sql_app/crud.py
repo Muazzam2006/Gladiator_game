@@ -16,9 +16,9 @@ def create_character(db: Session, character: schemas.CharacterCreate):
 def update_character(db: Session, character_id: int, adjustments: schemas.AttributeAdjustment):
     character = db.query(mymodels.Character).filter(mymodels.Character.char_id == character_id).first()
     if not character:
-        return None
+        raise HTTPException(status_code=404, detail="Character not found")
     if (adjustments.strength + adjustments.agility + adjustments.stamina) > character.availablePoints:
-        return None
+        raise HTTPException(status_code=400, detail="Not enough available points")
     character.strength += adjustments.strength
     character.agility += adjustments.agility
     character.stamina += adjustments.stamina
@@ -39,36 +39,34 @@ def join_lobby(db: Session, lobby_id: int, character_id: int):
     if not db_lobby:
         raise HTTPException(status_code=404, detail="Lobby not found")
 
-    if db_lobby.players:
+    if len(db_lobby.players) > 0:
         raise HTTPException(status_code=400, detail="Lobby already has a character")
 
     db_character = db.query(mymodels.Character).filter(mymodels.Character.char_id == character_id).first()
     if not db_character:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    db_lobby.characters.append(db_character)
+    db_lobby.players.append(db_character)
     db.commit()
     db.refresh(db_lobby)
     return db_lobby
 
-
-# ХАТОООО!!!!!!
 def start_fight(db: Session, lobby_id: int):
     db_lobby = db.query(mymodels.Lobby).filter(mymodels.Lobby.lobby_id == lobby_id).first()
     if not db_lobby:
         raise HTTPException(status_code=404, detail="Lobby not found")
 
-    if not db_lobby.players:
+    if len(db_lobby.players) == 0:
         raise HTTPException(status_code=400, detail="No characters in lobby to start a fight")
 
     character = db_lobby.players[0]
-    
+
     bot_strength = random.randint(1, 20)
     bot_agility = random.randint(1, 30 - bot_strength - 1)
     bot_stamina = random.randint(1, 30 - bot_strength - bot_agility)
-    
+
     bot = mymodels.Bot(
-        name=f"Bot {bot_strength}", 
+        name=f"Bot {bot_strength}",
         strength=bot_strength,
         agility=bot_agility,
         stamina=bot_stamina,
@@ -89,22 +87,26 @@ def start_fight(db: Session, lobby_id: int):
     db.add(new_fight)
     db.commit()
     db.refresh(new_fight)
-    return new_fight
 
+    fight_dict = {
+        "fight_id": new_fight.fight_id,
+        "lobby_id": new_fight.lobby_id,
+        "player_turn": new_fight.playerTurn,
+        "player_health": new_fight.playerHealth,
+        "opponent_health": new_fight.opponentHealth,
+        "player_id": new_fight.playerId,
+        "bot_id": new_fight.botId
+    }
 
-
-
+    return schemas.Fight(**fight_dict)
 
 def make_move(db: Session, fight_id: int, attack: schemas.Move, block: schemas.Move, block2: schemas.Move):
     fight = db.query(mymodels.Fight).filter(mymodels.Fight.fight_id == fight_id).first()
     if not fight:
         raise HTTPException(status_code=404, detail="Fight not found")
 
-    fight_over = fight.opponentHealth <= 0 or fight.playerHealth <= 0
-    victory = fight.opponentHealth <= 0
-
-    if fight_over:
-        raise HTTPException(status_code=400, detail="Fight is Over")
+    if fight.opponentHealth <= 0 or fight.playerHealth <= 0:
+        raise HTTPException(status_code=400, detail="Fight is over")
     
     character = db.query(mymodels.Character).filter(mymodels.Character.char_id == fight.playerId).first()
     bot = db.query(mymodels.Bot).filter(mymodels.Bot.bot_id == fight.botId).first()
@@ -113,12 +115,15 @@ def make_move(db: Session, fight_id: int, attack: schemas.Move, block: schemas.M
     bot_block = random.sample(list(schemas.Move), 2)
 
     player_hit = attack not in bot_block
-    player_damage_dealt = character.strength + 5 if player_hit else 0 
+    player_damage_dealt = character.strength + 5 if player_hit else 0
     fight.opponentHealth -= (player_damage_dealt - (1 if character.agility > 20 else 2 * character.agility // 100))
 
     opponent_hit = bot_attack != block and bot_attack != block2
-    opponent_damage_dealt = bot.strength + 5 if opponent_hit else 0 
+    opponent_damage_dealt = bot.strength + 5 if opponent_hit else 0
     fight.playerHealth -= (opponent_damage_dealt - (1 if bot.agility > 20 else 2 * bot.agility // 100))
+
+    fight_over = fight.opponentHealth <= 0 or fight.playerHealth <= 0
+    victory = fight.opponentHealth <= 0
 
     db.commit()
     db.refresh(fight)
@@ -134,8 +139,6 @@ def make_move(db: Session, fight_id: int, attack: schemas.Move, block: schemas.M
         victory=victory
     )
 
-
-
 def end_fight(db: Session, fight_id: int):
     fight = db.query(mymodels.Fight).filter(mymodels.Fight.fight_id == fight_id).first()
     if not fight:
@@ -145,7 +148,7 @@ def end_fight(db: Session, fight_id: int):
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    if not (fight.opponentHealth <= 0 or fight.playerHealth <= 0):
+    if fight.opponentHealth > 0 and fight.playerHealth > 0:
         raise HTTPException(status_code=400, detail="Fight isn't over")
 
     xp = 100

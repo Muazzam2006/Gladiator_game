@@ -2,35 +2,12 @@ from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import relationship
 from sql_app.database import Base
 
-# class User(Base):
-#     __tablename__ = "users"
-
-#     id = Column(Integer, primary_key=True)
-#     email = Column(String, unique=True, index=True)
-#     hashed_password = Column(String)
-#     is_active = Column(Boolean, default=True)
-
-#     items = relationship("Item", back_populates="owner")
-
-
-# class Item(Base):
-#     __tablename__ = "items"
-
-#     id = Column(Integer, primary_key=True)
-#     title = Column(String, index=True)
-#     description = Column(String, index=True)
-#     owner_id = Column(Integer, ForeignKey("users.id"))
-
-#     owner = relationship("User", back_populates="items")
-
 characters_lobbies = Table(
     "characters_lobbies",
     Base.metadata,
     Column("character_id", Integer, ForeignKey("characters.char_id")),
     Column("lobby_id", Integer, ForeignKey("lobbies.lobby_id"))
 )
-
-
 
 class Character(Base):
     __tablename__ = "characters"
@@ -47,15 +24,6 @@ class Character(Base):
     lobbies = relationship("Lobby", secondary=characters_lobbies, back_populates="players")
     fights = relationship("Fight", back_populates="player")
 
-    # items = relationship("Item", back_populates="owner")
-
-    # def increase_xp(self, xp: int):
-    #     self.experience += xp
-    #     if self.experience >= self.level * 100: 
-    #         self.level += 1
-    #         self.availablePoints += 5
-    #         self.health += self.stamina // 2
-
 class Bot(Base):
     __tablename__ = "bots"
 
@@ -66,16 +34,12 @@ class Bot(Base):
     stamina = Column(Integer, default=10)
     health = Column(Integer, default=120)
 
-    # items = relationship("Item", back_populates="owner")
-
 class Lobby(Base):
     __tablename__ = "lobbies"
 
     lobby_id = Column(Integer, primary_key=True)
     players = relationship("Character", secondary=characters_lobbies, back_populates="lobbies")
-
-    # items = relationship("Item", back_populates="owner")
-
+    fights = relationship("Fight", back_populates="lobby")
 
 class Fight(Base):
     __tablename__ = "fights"
@@ -91,4 +55,3 @@ class Fight(Base):
     lobby = relationship("Lobby", back_populates="fights")
     player = relationship("Character", foreign_keys=[playerId])
     bot = relationship("Bot", foreign_keys=[botId])
-
